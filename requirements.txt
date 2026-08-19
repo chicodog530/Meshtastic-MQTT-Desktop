@@ -1,0 +1,5 @@
+paho-mqtt>=2.1,<3
+meshtastic>=2.7,<3
+cryptography>=43,<47
+tkintermapview>=1.20,<2
+sv_ttk>=2.0,<3
