@@ -488,7 +488,7 @@ class App(tk.Tk):
         
         ttk.Label(win, text=APP_NAME, font=("Segoe UI", 12, "bold")).pack(pady=(20, 5))
         ttk.Label(win, text="Version: 0.18").pack(pady=2)
-        ttk.Label(win, text="Developer: KE0CGB - Larren").pack(pady=2)
+        ttk.Label(win, text="Developer: KE0CGB LARREN").pack(pady=2)
         
         link = ttk.Label(win, text="GitHub Repository", foreground="blue", cursor="hand2")
         link.pack(pady=10)
