@@ -166,7 +166,11 @@ class App(tk.Tk):
         self.message_menu.add_command(label="Request sender's node info", command=self.request_message_sender_nodeinfo)
         self.message_menu.add_command(label="Use sender as destination", command=self.use_message_sender)
         self.message_menu.add_command(label="Show sender in Nodes", command=self.show_message_sender_in_nodes)
-        ttk.Button(top, text="View raw packet", command=self.show_raw).pack(side="right", padx=4)
+        
+        messages_toolbar = ttk.Frame(messages_tab)
+        messages_toolbar.pack(fill="x", pady=5)
+        ttk.Label(messages_toolbar, text="Tip: Double-click a row to view its raw packet payload").pack(side="left", padx=5)
+        ttk.Button(messages_toolbar, text="View raw packet", command=self.show_raw).pack(side="right", padx=4)
 
         node_columns = ("node", "name", "short", "hardware", "last_heard", "hops", "gateway", "latitude", "longitude")
         self.nodes_tree = ttk.Treeview(nodes_tab, columns=node_columns, show="headings")
