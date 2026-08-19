@@ -16,6 +16,8 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 import tkintermapview
 import sv_ttk
+import ctypes
+import os
 
 import paho.mqtt.client as mqtt
 
@@ -71,7 +73,9 @@ class App(tk.Tk):
         self.position_rows: dict[str, str] = {}
         self.seen_packets: dict[tuple, float] = {}
         self.identity_announced: set[tuple[str, str]] = set()
-        sv_ttk.set_theme("dark" if self.cfg.get("dark_mode", True) else "light")
+        is_dark = bool(self.cfg.get("dark_mode", True))
+        sv_ttk.set_theme("dark" if is_dark else "light")
+        self._apply_titlebar_theme(is_dark)
         self._build()
         self._restore_contacts_to_ui()
         self.after(100, self._drain_events)
@@ -103,6 +107,19 @@ class App(tk.Tk):
         if self.contacts_save_job is not None:
             self.after_cancel(self.contacts_save_job)
         self.contacts_save_job = self.after(750, self.save_contacts)
+
+    def _apply_titlebar_theme(self, dark_mode=True):
+        if os.name != 'nt':
+            return
+        try:
+            self.update()
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            value = ctypes.c_int(2 if dark_mode else 0)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(value), ctypes.sizeof(value))
+            # Win 11 uses attribute 19
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(value), ctypes.sizeof(value))
+        except Exception:
+            pass
 
     def _build(self):
         top = ttk.Frame(self, padding=10); top.pack(fill="x")
@@ -966,6 +983,7 @@ class App(tk.Tk):
                 updated["dark_mode"] = dark_mode.get()
                 self.cfg.update(updated); self.save_config(); win.destroy()
                 sv_ttk.set_theme("dark" if updated["dark_mode"] else "light")
+                self._apply_titlebar_theme(updated["dark_mode"])
                 if self.connected:
                     self.status.set("Connected — settings saved; reconnect only if connection settings changed")
                 else:
