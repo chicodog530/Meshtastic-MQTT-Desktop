@@ -42,7 +42,7 @@ DEFAULT = {
     "experimental_sending": False,
     "preferred_gateway": "!69b02c8c",
     "virtual_node_id": "", "virtual_long_name": "MQTT Desktop", "virtual_short_name": "MQTT",
-    "dark_mode": True,
+    "dark_mode": True, "show_tooltips": True,
 }
 
 
@@ -127,11 +127,16 @@ class App(tk.Tk):
         top = ttk.Frame(self, padding=10); top.pack(fill="x")
         self.status = tk.StringVar(value="Disconnected")
         ttk.Label(top, textvariable=self.status).pack(side="left")
-        ttk.Button(top, text="Connect", command=self.connect).pack(side="right", padx=4)
-        ttk.Button(top, text="Disconnect", command=self.disconnect).pack(side="right", padx=4)
-        ttk.Button(top, text="Settings", command=self.settings).pack(side="right", padx=4)
-        ttk.Button(top, text="About", command=self.show_about).pack(side="right", padx=4)
+        btn_connect = ttk.Button(top, text="Connect", command=self.connect); btn_connect.pack(side="right", padx=4)
+        btn_disconnect = ttk.Button(top, text="Disconnect", command=self.disconnect); btn_disconnect.pack(side="right", padx=4)
+        btn_settings = ttk.Button(top, text="Settings", command=self.settings); btn_settings.pack(side="right", padx=4)
+        btn_about = ttk.Button(top, text="About", command=self.show_about); btn_about.pack(side="right", padx=4)
         ttk.Label(top, text="Brought to you by KE0CGB", foreground="gray").pack(side="right", padx=(0, 20))
+        
+        ToolTip(btn_connect, "Connect to the MQTT broker", self)
+        ToolTip(btn_disconnect, "Disconnect from the MQTT broker", self)
+        ToolTip(btn_settings, "Open application settings", self)
+        ToolTip(btn_about, "Show application info", self)
 
         notebook = ttk.Notebook(self); notebook.pack(fill="both", expand=True, padx=10)
         self.notebook = notebook
@@ -170,7 +175,9 @@ class App(tk.Tk):
         messages_toolbar = ttk.Frame(messages_tab)
         messages_toolbar.pack(fill="x", pady=5)
         ttk.Label(messages_toolbar, text="Tip: Double-click a row to view its raw packet payload").pack(side="left", padx=5)
-        ttk.Button(messages_toolbar, text="View raw packet", command=self.show_raw).pack(side="right", padx=4)
+        btn_raw = ttk.Button(messages_toolbar, text="View raw packet", command=self.show_raw)
+        btn_raw.pack(side="right", padx=4)
+        ToolTip(btn_raw, "View the raw JSON or Protobuf payload of the selected message", self)
 
         node_columns = ("node", "name", "short", "hardware", "last_heard", "hops", "gateway", "latitude", "longitude")
         self.nodes_tree = ttk.Treeview(nodes_tab, columns=node_columns, show="headings")
@@ -221,13 +228,21 @@ class App(tk.Tk):
         self.destination = ttk.Combobox(send, width=30, state="normal", values=("Broadcast (selected channel)",))
         self.destination.set("Broadcast (selected channel)"); self.destination.grid(row=1, column=2, padx=(0,8), sticky="ew")
         
-        ttk.Button(send, text="Send location…", command=self.send_location_dialog).grid(row=1, column=3, sticky="e")
+        btn_loc = ttk.Button(send, text="Send location…", command=self.send_location_dialog)
+        btn_loc.grid(row=1, column=3, sticky="e")
         
         ttk.Label(send, text="Message").grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.message = ttk.Entry(send); self.message.grid(row=3, column=0, columnspan=3, sticky="ew", padx=(0,8))
         self.message.bind("<Return>", lambda _e: self.send())
         
-        ttk.Button(send, text="Send", command=self.send).grid(row=3, column=3, sticky="e")
+        btn_send = ttk.Button(send, text="Send", command=self.send)
+        btn_send.grid(row=3, column=3, sticky="e")
+        
+        ToolTip(self.gateway, "Select the gateway node to route your message through", self)
+        ToolTip(self.send_channel, "Select the Meshtastic channel to broadcast on", self)
+        ToolTip(self.destination, "Select the recipient (Broadcast or a specific node)", self)
+        ToolTip(btn_loc, "Broadcast your current location to the mesh", self)
+        ToolTip(btn_send, "Send the encrypted text message", self)
         
         ttk.Label(send, text="Direct messages are limited to nodes last heard 0–1 hop from the gateway.",
                   foreground="#666666").grid(row=4, column=0, columnspan=4, sticky="w", pady=(7,0))
@@ -301,6 +316,58 @@ class App(tk.Tk):
         gateway = parsed.gateway_id if parsed else gateway_from_topic(msg.topic)
         if gateway: self.events.put(("gateway", gateway))
         if parsed: self.events.put(("message", parsed))
+
+def gateway_from_topic(topic: str) -> str:
+    parts = topic.split("/")
+    if len(parts) >= 2 and parts[-1].startswith("!"): return parts[-1]
+    return ""
+
+class ToolTip:
+    def __init__(self, widget, text, app):
+        self.widget = widget
+        self.text = text
+        self.app = app
+        self.tipwindow = None
+        self.id = None
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+
+    def enter(self, event=None):
+        if not bool(self.app.cfg.get("show_tooltips", True)): return
+        self.unschedule()
+        self.id = self.widget.after(500, self.showtip)
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def unschedule(self):
+        id = self.id
+        self.id = None
+        if id: self.widget.after_cancel(id)
+
+    def showtip(self, event=None):
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        
+        is_dark = bool(self.app.cfg.get("dark_mode", True))
+        bg = "#333333" if is_dark else "#ffffe0"
+        fg = "white" if is_dark else "black"
+        
+        label = tk.Label(tw, text=self.text, justify="left",
+                         background=bg, foreground=fg, relief="solid", borderwidth=1,
+                         font=("Segoe UI", "9", "normal"))
+        label.pack(ipadx=4, ipady=2)
+        
+    def hidetip(self):
+        tw = self.tipwindow
+        self.tipwindow = None
+        if tw: tw.destroy()
+
+DEFAULT = {"show_tooltips": True, ...}
 
     def _drain_events(self):
         try:
@@ -991,13 +1058,16 @@ class App(tk.Tk):
         dark_mode = tk.BooleanVar(value=bool(self.cfg.get("dark_mode", True)))
         ttk.Checkbutton(win, text="Dark Mode", variable=dark_mode).grid(
             row=len(fields)+2, column=1, sticky="w", padx=8, pady=4)
+        tooltips = tk.BooleanVar(value=bool(self.cfg.get("show_tooltips", True)))
+        ttk.Checkbutton(win, text="Show Hover Tooltips", variable=tooltips).grid(
+            row=len(fields)+3, column=1, sticky="w", padx=8, pady=4)
         def save():
             try:
                 updated = {k: e.get().strip() for k, e in entries.items()}
                 updated["port"] = int(updated["port"]); updated["channel_index"] = int(updated["channel_index"])
                 if not 0 <= updated["channel_index"] <= 7: raise ValueError("Channel index must be 0–7")
                 updated["tls"] = tls.get(); updated["experimental_sending"] = experimental.get()
-                updated["dark_mode"] = dark_mode.get()
+                updated["dark_mode"] = dark_mode.get(); updated["show_tooltips"] = tooltips.get()
                 self.cfg.update(updated); self.save_config(); win.destroy()
                 sv_ttk.set_theme("dark" if updated["dark_mode"] else "light")
                 self._apply_titlebar_theme(updated["dark_mode"])
