@@ -196,8 +196,11 @@ class App(tk.Tk):
         notebook.add(positions_tab, text="Positions")
         notebook.add(map_tab, text="Map")
         notebook.add(diagnostic_tab, text="Diagnostics")
+        map_toolbar = ttk.Frame(map_tab); map_toolbar.pack(fill="x", pady=2)
+        ttk.Button(map_toolbar, text="Pop out map (Fullscreen)", command=self.popout_map).pack(side="right", padx=5)
         
         self.map_widget = tkintermapview.TkinterMapView(map_tab, corner_radius=0)
+        self.map_widget.set_tile_server("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png")
         self.map_widget.pack(fill="both", expand=True)
         self.map_markers = {}
 
@@ -545,14 +548,50 @@ class App(tk.Tk):
                 min_lat = min(p[0] for p in positions); max_lat = max(p[0] for p in positions)
                 min_lon = min(p[1] for p in positions); max_lon = max(p[1] for p in positions)
                 self.map_widget.fit_bounding_box((max_lat, min_lon), (min_lat, max_lon))
-                
     def _update_map_marker(self, node_id, lat, lon):
         label = self._node_label(node_id)
         if node_id in self.map_markers:
             self.map_markers[node_id].set_position(lat, lon)
             self.map_markers[node_id].text = label
         else:
-            self.map_markers[node_id] = self.map_widget.set_marker(lat, lon, text=label)
+            self.map_markers[node_id] = self.map_widget.set_marker(lat, lon, text=label,
+                marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00")
+                
+        if hasattr(self, "pop_map_widget") and self.pop_map_widget:
+            if node_id in self.pop_map_markers:
+                self.pop_map_markers[node_id].set_position(lat, lon)
+                self.pop_map_markers[node_id].text = label
+            else:
+                self.pop_map_markers[node_id] = self.pop_map_widget.set_marker(lat, lon, text=label,
+                    marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00")
+                    
+    def popout_map(self):
+        win = tk.Toplevel(self)
+        win.title("Map")
+        win.geometry("1024x768")
+        
+        pop_map = tkintermapview.TkinterMapView(win, corner_radius=0)
+        pop_map.pack(fill="both", expand=True)
+        pop_map.set_tile_server("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png")
+        
+        pop_map.set_position(*self.map_widget.get_position())
+        pop_map.set_zoom(self.map_widget.zoom)
+        
+        self.pop_map_markers = {}
+        for node_id, marker in self.map_markers.items():
+            self.pop_map_markers[node_id] = pop_map.set_marker(
+                marker.position[0], marker.position[1], text=marker.text,
+                marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00"
+            )
+            
+        self.pop_map_widget = pop_map
+        
+        def on_close():
+            self.pop_map_widget = None
+            self.pop_map_markers = None
+            win.destroy()
+            
+        win.protocol("WM_DELETE_WINDOW", on_close)
             
     def show_about(self):
         win = tk.Toplevel(self)
