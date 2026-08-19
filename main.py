@@ -21,6 +21,11 @@ import os
 
 import paho.mqtt.client as mqtt
 
+from utils.formatting import format_relative_time
+from ui.components import ToolTip
+from ui.tabs import messages_tab, nodes_tab, positions_tab, map_tab, diagnostics_tab
+from ui import send_panel
+
 from mqtt_logic import (gateway_from_topic, json_downlink_topic, json_subscription,
                         direct_message_reachable, node_id_to_int, normalize_node_id, parse_json_message,
                         sendtext_envelope)
@@ -44,52 +49,6 @@ DEFAULT = {
     "virtual_node_id": "", "virtual_long_name": "MQTT Desktop", "virtual_short_name": "MQTT",
     "dark_mode": True, "show_tooltips": True,
 }
-
-
-class ToolTip:
-    def __init__(self, widget, text, app):
-        self.widget = widget
-        self.text = text
-        self.app = app
-        self.tipwindow = None
-        self.id = None
-        self.widget.bind("<Enter>", self.enter)
-        self.widget.bind("<Leave>", self.leave)
-
-    def enter(self, event=None):
-        if not bool(self.app.cfg.get("show_tooltips", True)): return
-        self.unschedule()
-        self.id = self.widget.after(500, self.showtip)
-
-    def leave(self, event=None):
-        self.unschedule()
-        self.hidetip()
-
-    def unschedule(self):
-        id = self.id
-        self.id = None
-        if id: self.widget.after_cancel(id)
-
-    def showtip(self, event=None):
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
-        self.tipwindow = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        
-        is_dark = bool(self.app.cfg.get("dark_mode", True))
-        bg = "#333333" if is_dark else "#ffffe0"
-        fg = "white" if is_dark else "black"
-        
-        label = tk.Label(tw, text=self.text, justify="left",
-                         background=bg, foreground=fg, relief="solid", borderwidth=1,
-                         font=("Segoe UI", "9", "normal"))
-        label.pack(ipadx=4, ipady=2)
-        
-    def hidetip(self):
-        tw = self.tipwindow
-        self.tipwindow = None
-        if tw: tw.destroy()
 
 
 class App(tk.Tk):
@@ -180,139 +139,43 @@ class App(tk.Tk):
         ttk.Label(top, text="Brought to you by KE0CGB", foreground="gray").pack(side="right", padx=(0, 20))
         
         ToolTip(btn_connect, "Connect to the MQTT broker", self)
-        ToolTip(btn_disconnect, "Disconnect from the MQTT broker", self)
-        ToolTip(btn_settings, "Open application settings", self)
-        ToolTip(btn_about, "Show application info", self)
-
         notebook = ttk.Notebook(self); notebook.pack(fill="both", expand=True, padx=10)
         self.notebook = notebook
-        messages_tab = ttk.Frame(notebook); nodes_tab = ttk.Frame(notebook)
-        self.nodes_tab = nodes_tab
-        positions_tab = ttk.Frame(notebook); diagnostic_tab = ttk.Frame(notebook)
-        map_tab = ttk.Frame(notebook)
         
-        notebook.add(messages_tab, text="Messages")
-        notebook.add(nodes_tab, text="Nodes")
-        notebook.add(positions_tab, text="Positions")
-        notebook.add(map_tab, text="Map")
-        notebook.add(diagnostic_tab, text="Diagnostics")
-        map_toolbar = ttk.Frame(map_tab); map_toolbar.pack(fill="x", pady=2)
-        ttk.Button(map_toolbar, text="Pop out map (Fullscreen)", command=self.popout_map).pack(side="right", padx=5)
+        msg_tab = messages_tab.build(self, notebook)
+        nd_tab = nodes_tab.build(self, notebook)
+        pos_tab = positions_tab.build(self, notebook)
+        mp_tab = map_tab.build(self, notebook)
+        diag_tab = diagnostics_tab.build(self, notebook)
         
-        self.map_widget = tkintermapview.TkinterMapView(map_tab, corner_radius=0)
-        self.map_widget.set_tile_server("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png")
-        self.map_widget.pack(fill="both", expand=True)
-        self.map_markers = {}
+        self.nodes_tab = nd_tab
+        
+        notebook.add(msg_tab, text="Messages")
+        notebook.add(nd_tab, text="Nodes")
+        notebook.add(pos_tab, text="Positions")
+        notebook.add(mp_tab, text="Map")
+        notebook.add(diag_tab, text="Diagnostics")
 
-        columns = ("time", "direction", "from", "type", "channel", "message", "hops", "rssi", "snr", "gateway")
-        self.tree = ttk.Treeview(messages_tab, columns=columns, show="headings")
-        widths = (135, 55, 180, 85, 80, 310, 45, 55, 50, 105)
-        for col, width in zip(columns, widths):
-            self.tree.heading(col, text=col.title()); self.tree.column(col, width=width, anchor="w")
-        self.tree.pack(fill="both", expand=True)
-        self.tree.tag_configure("requestable", foreground="#006fc4")
-        self.tree.tag_configure("unreachable", foreground="#777777")
-        message_scroll = ttk.Scrollbar(messages_tab, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(xscrollcommand=message_scroll.set); message_scroll.pack(fill="x")
-        self.tree.bind("<Double-1>", self.show_raw)
-        self.tree.bind("<Button-3>", self.show_message_menu)
-        self.message_menu = tk.Menu(self, tearoff=False)
-        self.message_menu.add_command(label="Request sender's node info", command=self.request_message_sender_nodeinfo)
-        self.message_menu.add_command(label="Use sender as destination", command=self.use_message_sender)
-        self.message_menu.add_command(label="Show sender in Nodes", command=self.show_message_sender_in_nodes)
-        
-        messages_toolbar = ttk.Frame(messages_tab)
-        messages_toolbar.pack(fill="x", pady=5)
-        ttk.Label(messages_toolbar, text="Tip: Double-click a row to view its raw packet payload").pack(side="left", padx=5)
-        btn_raw = ttk.Button(messages_toolbar, text="View raw packet", command=self.show_raw)
-        btn_raw.pack(side="right", padx=4)
-        ToolTip(btn_raw, "View the raw JSON or Protobuf payload of the selected message", self)
-
-        node_columns = ("node", "name", "short", "hardware", "last_heard", "hops", "gateway", "latitude", "longitude")
-        self.nodes_tree = ttk.Treeview(nodes_tab, columns=node_columns, show="headings")
-        for col, width in zip(node_columns, (125, 220, 65, 85, 140, 45, 120, 100, 100)):
-            self.nodes_tree.heading(col, text=col.replace("_", " ").title()); self.nodes_tree.column(col, width=width, anchor="w")
-        self.nodes_tree.pack(fill="both", expand=True)
-        self.nodes_tree.tag_configure("requestable", foreground="#006fc4")
-        self.nodes_tree.tag_configure("unreachable", foreground="#777777")
-        self.nodes_tree.bind("<Double-1>", lambda _event: self.use_selected_contact())
-        self.nodes_tree.bind("<<TreeviewSelect>>", lambda _event: self.update_nodeinfo_request_state())
-        contacts_bar = ttk.Frame(nodes_tab); contacts_bar.pack(fill="x", pady=5)
-        ttk.Label(contacts_bar, text="Blue = unnamed/requestable   Gray = beyond one hop").pack(side="left")
-        ttk.Button(contacts_bar, text="Delete contact", command=self.delete_selected_contact).pack(side="right", padx=4)
-        ttk.Button(contacts_bar, text="Edit contact", command=self.edit_selected_contact).pack(side="right", padx=4)
-        self.request_nodeinfo_button = ttk.Button(contacts_bar, text="Request node info",
-                                                  command=self.request_selected_nodeinfo)
-        self.request_nodeinfo_button.pack(side="right", padx=4)
-        ttk.Button(contacts_bar, text="Use as destination", command=self.use_selected_contact).pack(side="right", padx=4)
-
-        position_columns = ("time", "node", "long_name", "short_name", "latitude", "longitude",
-                            "altitude", "place", "gateway")
-        self.positions_tree = ttk.Treeview(positions_tab, columns=position_columns, show="headings")
-        for col, width in zip(position_columns, (145, 125, 190, 75, 105, 105, 70, 240, 120)):
-            self.positions_tree.heading(col, text=col.title()); self.positions_tree.column(col, width=width, anchor="w")
-        self.positions_tree.pack(fill="both", expand=True)
-        self.position_menu = tk.Menu(self, tearoff=False)
-        self.position_menu.add_command(label="Identify location", command=self.identify_selected_position)
-        self.position_menu.add_command(label="Open on OpenStreetMap", command=self.open_selected_position)
-        self.position_menu.add_command(label="Copy coordinates", command=self.copy_selected_position)
-        self.positions_tree.bind("<Button-3>", self.show_position_menu)
-
-        ttk.Label(diagnostic_tab, text=f"Persistent log: {LOG_FILE}", padding=5).pack(fill="x")
-        self.log_text = tk.Text(diagnostic_tab, wrap="word", state="disabled")
-        self.log_text.pack(fill="both", expand=True, padx=5, pady=(0,5))
-
-        send = ttk.LabelFrame(self, text="Send encrypted Meshtastic text", padding=10); send.pack(fill="x", padx=10, pady=10)
-        
-        ttk.Label(send, text="Gateway").grid(row=0, column=0, sticky="w")
-        self.gateway = ttk.Combobox(send, width=17, state="normal", values=sorted(self.gateways))
-        self.gateway.grid(row=1, column=0, padx=(0,8), sticky="w")
-        if self.cfg.get("preferred_gateway"): self.gateway.set(self.cfg["preferred_gateway"])
-        
-        ttk.Label(send, text="Channel").grid(row=0, column=1, sticky="w")
-        self.send_channel = ttk.Combobox(send, width=12, state="readonly", values=("LZMesh", "LongFast", "LZRF"))
-        self.send_channel.set("LZMesh"); self.send_channel.grid(row=1, column=1, padx=(0,8), sticky="w")
-        
-        ttk.Label(send, text="Destination").grid(row=0, column=2, sticky="w")
-        self.destination = ttk.Combobox(send, width=30, state="normal", values=("Broadcast (selected channel)",))
-        self.destination.set("Broadcast (selected channel)"); self.destination.grid(row=1, column=2, padx=(0,8), sticky="ew")
-        
-        btn_loc = ttk.Button(send, text="Send location…", command=self.send_location_dialog)
-        btn_loc.grid(row=1, column=3, sticky="e")
-        
-        ttk.Label(send, text="Message").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        self.message = ttk.Entry(send); self.message.grid(row=3, column=0, columnspan=3, sticky="ew", padx=(0,8))
-        self.message.bind("<Return>", lambda _e: self.send())
-        
-        btn_send = ttk.Button(send, text="Send", command=self.send)
-        btn_send.grid(row=3, column=3, sticky="e")
-        
-        ToolTip(self.gateway, "Select the gateway node to route your message through", self)
-        ToolTip(self.send_channel, "Select the Meshtastic channel to broadcast on", self)
-        ToolTip(self.destination, "Select the recipient (Broadcast or a specific node)", self)
-        ToolTip(btn_loc, "Broadcast your current location to the mesh", self)
-        ToolTip(btn_send, "Send the encrypted text message", self)
-        
-        ttk.Label(send, text="Direct messages are limited to nodes last heard 0–1 hop from the gateway.",
-                  foreground="#666666").grid(row=4, column=0, columnspan=4, sticky="w", pady=(7,0))
-        
-        send.columnconfigure(2, weight=1)
+        send = send_panel.build(self, self)
+        send.pack(fill="x", padx=10, pady=(0, 10))
 
     def connect(self):
         self.disconnect()
         self.manual_disconnect = False
         try:
-            client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"meshtastic-desktop-{int(time.time()) & 0xffff:x}")
-            if self.cfg["username"]:
-                client.username_pw_set(self.cfg["username"], self.cfg["password"])
+            self.status.set("Connecting...")
+            if not self.client:
+                self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+                self.client.on_connect = self._on_connect
+                self.client.on_message = self._on_message
+                self.client.on_disconnect = self._on_disconnect
             if self.cfg.get("tls"):
-                client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
-            client.on_connect = self._on_connect; client.on_disconnect = self._on_disconnect
-            client.on_message = self._on_message
-            client.reconnect_delay_set(min_delay=2, max_delay=30)
-            client.connect_async(self.cfg["host"], int(self.cfg["port"]), 30)
-            client.loop_start(); self.client = client
-            self.status.set(f"Connecting to {self.cfg['host']}…")
+                self.client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+            if self.cfg["username"]:
+                self.client.username_pw_set(self.cfg["username"], self.cfg["password"])
+            self.client.reconnect_delay_set(min_delay=2, max_delay=30)
+            self.client.connect_async(self.cfg["host"], int(self.cfg["port"]), 30)
+            self.client.loop_start()
             self._log(f"Connecting to {self.cfg['host']}:{self.cfg['port']}")
         except Exception as exc:
             messagebox.showerror("Connection error", str(exc))
@@ -335,13 +198,9 @@ class App(tk.Tk):
             self.events.put(("log", f"Connected; subscribed to JSON and {encrypted_topic}"))
         else: self.events.put(("error", f"Broker rejected connection: {reason_code}"))
 
-    def _on_disconnect(self, _client, _userdata, _flags, reason_code, _properties):
-        detail = f"Disconnected: {reason_code}"
-        self.events.put(("log", detail))
-        if self.manual_disconnect:
-            self.events.put(("status", "Disconnected by user"))
-        else:
-            self.events.put(("status", f"{detail} — reconnecting automatically"))
+    def _on_disconnect(self, _client, _userdata, _rc):
+        if not self.manual_disconnect:
+            self.events.put(("disconnect", None))
 
     def _on_message(self, _client, _userdata, msg):
         try:
@@ -377,8 +236,11 @@ class App(tk.Tk):
                 elif kind == "geocode_error":
                     self.status.set("Location lookup failed")
                     messagebox.showerror("Location lookup", value)
-                elif kind == "gateway":
+                if kind == "gateway":
                     self.gateways.add(value); self._refresh_gateway_choices(value if not self.gateway.get() else None)
+                elif kind == "disconnect":
+                    self.connected = False
+                    self.status.set(f"Connection lost — reconnecting to {self.cfg['host']}...")
                 elif kind == "message":
                     self.connected = True
                     if not self.status.get().startswith(("Connected", "Published")):
@@ -407,9 +269,12 @@ class App(tk.Tk):
                         channel, value.text, hops, rssi, snr, self._node_label(value.gateway_id)))
                     self.raw_messages[iid] = value
                     self._update_special_views(value, stamp)
-                    if len(self.tree.get_children()) > 1000:
-                        old = self.tree.get_children()[-1]
+                    max_msgs = int(self.cfg.get("max_messages", 1000))
+                    children = self.tree.get_children()
+                    while len(children) > max_msgs:
+                        old = children[-1]
                         self.raw_messages.pop(old, None); self.tree.delete(old)
+                        children = self.tree.get_children()
         except queue.Empty: pass
         self.after(100, self._drain_events)
 
@@ -501,8 +366,10 @@ class App(tk.Tk):
         def coordinate(key):
             value = contact.get(key, "")
             return f"{value:.6f}" if isinstance(value, (int, float)) else value
+        
+        last_heard = format_relative_time(contact.get("last_heard", ""))
         return (node_id, contact.get("long_name", ""), contact.get("short_name", ""),
-                contact.get("hardware", ""), contact.get("last_heard", ""),
+                contact.get("hardware", ""), last_heard,
                 contact.get("hops", ""), self._node_label(contact.get("gateway", "")),
                 coordinate("latitude"), coordinate("longitude"))
 
@@ -578,7 +445,7 @@ class App(tk.Tk):
         info = [
             ("ID", node_id),
             ("Hardware", contact.get('hardware', 'Unknown')),
-            ("Last Heard", contact.get('last_heard', 'Unknown')),
+            ("Last Heard", format_relative_time(contact.get('last_heard', 'Unknown'))),
             ("Connection", connection),
             ("Hops", hops),
             ("Gateway", self._node_label(contact.get('gateway', ''))),
