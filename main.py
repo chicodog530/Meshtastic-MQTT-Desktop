@@ -567,11 +567,20 @@ class App(tk.Tk):
         
         ttk.Label(frame, text=contact.get('long_name') or "Unknown Node", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 10))
         
+        hops = contact.get('hops', 'Unknown')
+        if hops == 0:
+            connection = "MQTT (Gateway)"
+        elif isinstance(hops, int) and hops > 0:
+            connection = "RF (LoRa)"
+        else:
+            connection = "Unknown"
+            
         info = [
             ("ID", node_id),
             ("Hardware", contact.get('hardware', 'Unknown')),
             ("Last Heard", contact.get('last_heard', 'Unknown')),
-            ("Hops", contact.get('hops', 'Unknown')),
+            ("Connection", connection),
+            ("Hops", hops),
             ("Gateway", self._node_label(contact.get('gateway', ''))),
             ("Location", f"{contact.get('latitude', '')}, {contact.get('longitude', '')}")
         ]
