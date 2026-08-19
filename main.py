@@ -73,11 +73,13 @@ class App(tk.Tk):
         self.position_rows: dict[str, str] = {}
         self.seen_packets: dict[tuple, float] = {}
         self.identity_announced: set[tuple[str, str]] = set()
+        self._build()
+        self._restore_contacts_to_ui()
+        
         is_dark = bool(self.cfg.get("dark_mode", True))
         sv_ttk.set_theme("dark" if is_dark else "light")
         self._apply_titlebar_theme(is_dark)
-        self._build()
-        self._restore_contacts_to_ui()
+        
         self.after(100, self._drain_events)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
