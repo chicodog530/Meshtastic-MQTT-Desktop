@@ -548,22 +548,63 @@ class App(tk.Tk):
                 min_lat = min(p[0] for p in positions); max_lat = max(p[0] for p in positions)
                 min_lon = min(p[1] for p in positions); max_lon = max(p[1] for p in positions)
                 self.map_widget.fit_bounding_box((max_lat, min_lon), (min_lat, max_lon))
+    def _on_marker_click(self, marker):
+        node_id = getattr(marker, "node_id", "")
+        if not node_id: return
+        contact = self.contacts.get(node_id, {})
+        
+        win = tk.Toplevel(self)
+        title_name = contact.get("short_name") or node_id
+        win.title(f"Node Info: {title_name}")
+        win.transient(self)
+        
+        x, y = self.winfo_pointerx(), self.winfo_pointery()
+        win.geometry(f"+{x+10}+{y+10}")
+        win.resizable(False, False)
+        
+        frame = ttk.Frame(win, padding=15)
+        frame.pack(fill="both", expand=True)
+        
+        ttk.Label(frame, text=contact.get('long_name') or "Unknown Node", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 10))
+        
+        info = [
+            ("ID", node_id),
+            ("Hardware", contact.get('hardware', 'Unknown')),
+            ("Last Heard", contact.get('last_heard', 'Unknown')),
+            ("Hops", contact.get('hops', 'Unknown')),
+            ("Gateway", self._node_label(contact.get('gateway', ''))),
+            ("Location", f"{contact.get('latitude', '')}, {contact.get('longitude', '')}")
+        ]
+        
+        for label, val in info:
+            row = ttk.Frame(frame); row.pack(fill="x", pady=2)
+            ttk.Label(row, text=f"{label}:", width=10, foreground="gray").pack(side="left")
+            ttk.Label(row, text=str(val)).pack(side="left")
+            
+        ttk.Button(frame, text="Close", command=win.destroy).pack(pady=(15, 0))
+
     def _update_map_marker(self, node_id, lat, lon):
         label = self._node_label(node_id)
         if node_id in self.map_markers:
             self.map_markers[node_id].set_position(lat, lon)
             self.map_markers[node_id].text = label
         else:
-            self.map_markers[node_id] = self.map_widget.set_marker(lat, lon, text=label,
-                marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00")
+            marker = self.map_widget.set_marker(lat, lon, text=label,
+                marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00",
+                command=self._on_marker_click)
+            marker.node_id = node_id
+            self.map_markers[node_id] = marker
                 
         if hasattr(self, "pop_map_widget") and self.pop_map_widget:
             if node_id in self.pop_map_markers:
                 self.pop_map_markers[node_id].set_position(lat, lon)
                 self.pop_map_markers[node_id].text = label
             else:
-                self.pop_map_markers[node_id] = self.pop_map_widget.set_marker(lat, lon, text=label,
-                    marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00")
+                pop_marker = self.pop_map_widget.set_marker(lat, lon, text=label,
+                    marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00",
+                    command=self._on_marker_click)
+                pop_marker.node_id = node_id
+                self.pop_map_markers[node_id] = pop_marker
                     
     def popout_map(self):
         win = tk.Toplevel(self)
@@ -579,10 +620,13 @@ class App(tk.Tk):
         
         self.pop_map_markers = {}
         for node_id, marker in self.map_markers.items():
-            self.pop_map_markers[node_id] = pop_map.set_marker(
+            pop_marker = pop_map.set_marker(
                 marker.position[0], marker.position[1], text=marker.text,
-                marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00"
+                marker_color_circle="#00ff00", marker_color_outside="#111111", text_color="#00ff00",
+                command=self._on_marker_click
             )
+            pop_marker.node_id = node_id
+            self.pop_map_markers[node_id] = pop_marker
             
         self.pop_map_widget = pop_map
         
