@@ -367,8 +367,6 @@ class ToolTip:
         self.tipwindow = None
         if tw: tw.destroy()
 
-DEFAULT = {"show_tooltips": True, ...}
-
     def _drain_events(self):
         try:
             while True:
