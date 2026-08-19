@@ -484,7 +484,9 @@ class App(tk.Tk):
         win.title("About")
         win.transient(self)
         win.grab_set()
-        win.geometry("350x200")
+        x = self.winfo_x() + (self.winfo_width() // 2) - 175
+        y = self.winfo_y() + (self.winfo_height() // 2) - 100
+        win.geometry(f"350x200+{x}+{y}")
         win.resizable(False, False)
         
         ttk.Label(win, text=APP_NAME, font=("Segoe UI", 12, "bold")).pack(pady=(20, 5))
