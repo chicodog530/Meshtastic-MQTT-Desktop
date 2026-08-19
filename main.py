@@ -129,6 +129,7 @@ class App(tk.Tk):
         ttk.Button(top, text="Disconnect", command=self.disconnect).pack(side="right", padx=4)
         ttk.Button(top, text="Settings", command=self.settings).pack(side="right", padx=4)
         ttk.Button(top, text="About", command=self.show_about).pack(side="right", padx=4)
+        ttk.Label(top, text="Brought to you by KE0CGB", foreground="gray").pack(side="right", padx=(0, 20))
 
         notebook = ttk.Notebook(self); notebook.pack(fill="both", expand=True, padx=10)
         self.notebook = notebook
