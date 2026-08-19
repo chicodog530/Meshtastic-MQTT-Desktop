@@ -203,24 +203,32 @@ class App(tk.Tk):
         self.log_text.pack(fill="both", expand=True, padx=5, pady=(0,5))
 
         send = ttk.LabelFrame(self, text="Send encrypted Meshtastic text", padding=10); send.pack(fill="x", padx=10, pady=10)
+        
         ttk.Label(send, text="Gateway").grid(row=0, column=0, sticky="w")
         self.gateway = ttk.Combobox(send, width=17, state="normal", values=sorted(self.gateways))
-        self.gateway.grid(row=1, column=0, padx=(0,8))
+        self.gateway.grid(row=1, column=0, padx=(0,8), sticky="w")
         if self.cfg.get("preferred_gateway"): self.gateway.set(self.cfg["preferred_gateway"])
+        
         ttk.Label(send, text="Channel").grid(row=0, column=1, sticky="w")
         self.send_channel = ttk.Combobox(send, width=12, state="readonly", values=("LZMesh", "LongFast", "LZRF"))
-        self.send_channel.set("LZMesh"); self.send_channel.grid(row=1, column=1, padx=(0,8))
+        self.send_channel.set("LZMesh"); self.send_channel.grid(row=1, column=1, padx=(0,8), sticky="w")
+        
         ttk.Label(send, text="Destination").grid(row=0, column=2, sticky="w")
         self.destination = ttk.Combobox(send, width=30, state="normal", values=("Broadcast (selected channel)",))
-        self.destination.set("Broadcast (selected channel)"); self.destination.grid(row=1, column=2, padx=(0,8))
-        ttk.Label(send, text="Message").grid(row=0, column=3, sticky="w")
-        self.message = ttk.Entry(send); self.message.grid(row=1, column=3, sticky="ew", padx=(0,8))
+        self.destination.set("Broadcast (selected channel)"); self.destination.grid(row=1, column=2, padx=(0,8), sticky="ew")
+        
+        ttk.Button(send, text="Send location…", command=self.send_location_dialog).grid(row=1, column=3, sticky="e")
+        
+        ttk.Label(send, text="Message").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        self.message = ttk.Entry(send); self.message.grid(row=3, column=0, columnspan=3, sticky="ew", padx=(0,8))
         self.message.bind("<Return>", lambda _e: self.send())
-        ttk.Button(send, text="Send", command=self.send).grid(row=1, column=4, padx=(0,8))
-        ttk.Button(send, text="Send location…", command=self.send_location_dialog).grid(row=1, column=5)
+        
+        ttk.Button(send, text="Send", command=self.send).grid(row=3, column=3, sticky="e")
+        
         ttk.Label(send, text="Direct messages are limited to nodes last heard 0–1 hop from the gateway.",
-                  foreground="#666666").grid(row=2, column=0, columnspan=6, sticky="w", pady=(7,0))
-        send.columnconfigure(3, weight=1)
+                  foreground="#666666").grid(row=4, column=0, columnspan=4, sticky="w", pady=(7,0))
+        
+        send.columnconfigure(2, weight=1)
 
     def connect(self):
         self.disconnect()
