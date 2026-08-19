@@ -50,8 +50,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("900x610")
-        self.minsize(720, 480)
+        self.geometry("900x680")
+        self.minsize(750, 550)
         self.cfg = self.load_config()
         self.contacts = self.load_contacts()
         self.contacts_save_job = None
